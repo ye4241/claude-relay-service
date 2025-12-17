@@ -11,7 +11,8 @@ export const useUserStore = defineStore('user', {
     isAuthenticated: false,
     sessionToken: null,
     loading: false,
-    config: null
+    config: null,
+    authConfig: null
   }),
 
   getters: {
@@ -21,7 +22,22 @@ export const useUserStore = defineStore('user', {
   },
 
   actions: {
-    // 🔐 用户登录
+    // 🔐 获取认证配置
+    async getAuthConfig() {
+      try {
+        const response = await axios.get(`${API_BASE}/auth-config`)
+        if (response.data.success) {
+          this.authConfig = response.data.config
+          return response.data.config
+        }
+        return { ldapEnabled: false, oidcEnabled: false }
+      } catch (error) {
+        console.error('Failed to get auth config:', error)
+        return { ldapEnabled: false, oidcEnabled: false }
+      }
+    },
+
+    // 🔐 用户登录（LDAP）
     async login(credentials) {
       this.loading = true
       try {
@@ -42,6 +58,53 @@ export const useUserStore = defineStore('user', {
           return response.data
         } else {
           throw new Error(response.data.message || 'Login failed')
+        }
+      } catch (error) {
+        this.clearAuth()
+        throw error
+      } finally {
+        this.loading = false
+      }
+    },
+
+    // 🔐 OIDC 登录 - 获取授权 URL 并跳转
+    async oidcLogin() {
+      try {
+        const response = await axios.get(`${API_BASE}/oidc/auth-url`)
+
+        if (response.data.success && response.data.authUrl) {
+          // 跳转到 OIDC 授权页面
+          window.location.href = response.data.authUrl
+        } else {
+          throw new Error(response.data.message || 'SSO 登录初始化失败')
+        }
+      } catch (error) {
+        console.error('OIDC login error:', error)
+        throw error
+      }
+    },
+
+    // 🔐 OIDC 回调处理 - 验证 token 并完成登录
+    async handleOidcCallback(sessionToken) {
+      this.loading = true
+      try {
+        const response = await axios.post(`${API_BASE}/oidc/verify-token`, { sessionToken })
+
+        if (response.data.success) {
+          this.user = response.data.user
+          this.sessionToken = response.data.sessionToken
+          this.isAuthenticated = true
+
+          // 保存到 localStorage
+          localStorage.setItem('userToken', this.sessionToken)
+          localStorage.setItem('userData', JSON.stringify(this.user))
+
+          // 设置 axios 默认头部
+          this.setAuthHeader()
+
+          return true
+        } else {
+          throw new Error(response.data.message || 'SSO 登录验证失败')
         }
       } catch (error) {
         this.clearAuth()

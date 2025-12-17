@@ -207,28 +207,28 @@ router.get('/oidc/callback', async (req, res) => {
     // 检查 OIDC 返回的错误
     if (oidcError) {
       logger.warn(`⚠️ OIDC callback error: ${oidcError} - ${error_description}`)
-      // 重定向到前端登录页面并带上错误信息
+      // 重定向到前端用户登录页面并带上错误信息
       const errorMessage = encodeURIComponent(error_description || oidcError)
-      return res.redirect(`/admin-next/#/login?error=${errorMessage}`)
+      return res.redirect(`/admin-next/#/user-login?error=${errorMessage}`)
     }
 
     if (!code || !state) {
       return res.redirect(
-        `/admin-next/#/login?error=${encodeURIComponent('Missing code or state')}`
+        `/admin-next/#/user-login?error=${encodeURIComponent('Missing code or state')}`
       )
     }
 
     // 检查用户管理是否启用
     if (!config.userManagement.enabled) {
       return res.redirect(
-        `/admin-next/#/login?error=${encodeURIComponent('User management is not enabled')}`
+        `/admin-next/#/user-login?error=${encodeURIComponent('User management is not enabled')}`
       )
     }
 
     // 检查 OIDC 是否启用
     if (!config.oidc || !config.oidc.enabled) {
       return res.redirect(
-        `/admin-next/#/login?error=${encodeURIComponent('OIDC authentication is not enabled')}`
+        `/admin-next/#/user-login?error=${encodeURIComponent('OIDC authentication is not enabled')}`
       )
     }
 
@@ -238,18 +238,20 @@ router.get('/oidc/callback', async (req, res) => {
     if (!authResult.success) {
       logger.info(`🚫 Failed OIDC login from IP: ${clientIp}`)
       return res.redirect(
-        `/admin-next/#/login?error=${encodeURIComponent(authResult.message || 'OIDC login failed')}`
+        `/admin-next/#/user-login?error=${encodeURIComponent(authResult.message || 'OIDC login failed')}`
       )
     }
 
     // 登录成功
     logger.info(`✅ OIDC user login successful: ${authResult.user.username} from IP: ${clientIp}`)
 
-    // 重定向到前端，带上 session token
+    // 重定向到前端 OIDC 回调页面，带上 session token
     res.redirect(`/admin-next/#/oidc-callback?token=${authResult.sessionToken}`)
   } catch (error) {
     logger.error('❌ OIDC callback error:', error)
-    res.redirect(`/admin-next/#/login?error=${encodeURIComponent('OIDC authentication failed')}`)
+    res.redirect(
+      `/admin-next/#/user-login?error=${encodeURIComponent('OIDC authentication failed')}`
+    )
   }
 })
 
