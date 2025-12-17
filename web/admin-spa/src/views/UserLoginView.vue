@@ -59,7 +59,11 @@
         </div>
 
         <!-- LDAP 登录表单 -->
-        <form v-if="!configLoading && showLdapLogin" class="space-y-6" @submit.prevent="handleLogin">
+        <form
+          v-if="!configLoading && showLdapLogin"
+          class="space-y-6"
+          @submit.prevent="handleLogin"
+        >
           <div>
             <label
               class="block text-sm font-medium text-gray-700 dark:text-gray-300"
