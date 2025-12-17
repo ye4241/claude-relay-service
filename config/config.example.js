@@ -180,6 +180,24 @@ const config = {
     }
   },
 
+  // 🔐 OIDC 认证配置
+  oidc: {
+    enabled: process.env.OIDC_ENABLED === 'true',
+    issuerUrl: process.env.OIDC_ISSUER_URL || '',
+    clientId: process.env.OIDC_CLIENT_ID || '',
+    clientSecret: process.env.OIDC_CLIENT_SECRET || '',
+    redirectUri: process.env.OIDC_REDIRECT_URI || '',
+    scope: process.env.OIDC_SCOPE || 'openid profile email',
+    // OIDC 用户属性映射
+    userMapping: {
+      username: process.env.OIDC_USER_ATTR_USERNAME || 'preferred_username',
+      displayName: process.env.OIDC_USER_ATTR_DISPLAY_NAME || 'name',
+      email: process.env.OIDC_USER_ATTR_EMAIL || 'email',
+      firstName: process.env.OIDC_USER_ATTR_FIRST_NAME || 'given_name',
+      lastName: process.env.OIDC_USER_ATTR_LAST_NAME || 'family_name'
+    }
+  },
+
   // 👥 用户管理配置
   userManagement: {
     enabled: process.env.USER_MANAGEMENT_ENABLED === 'true',

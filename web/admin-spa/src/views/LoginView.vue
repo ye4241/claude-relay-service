@@ -37,7 +37,8 @@
         <p class="text-base text-gray-600 dark:text-gray-400 sm:text-lg">管理后台</p>
       </div>
 
-      <form class="space-y-4 sm:space-y-6" @submit.prevent="handleLogin">
+      <!-- LDAP 登录表单 -->
+      <form v-if="showLdapLogin" class="space-y-4 sm:space-y-6" @submit.prevent="handleLogin">
         <div>
           <label
             class="mb-2 block text-sm font-semibold text-gray-900 dark:text-gray-100 sm:mb-3"
@@ -85,6 +86,42 @@
         </button>
       </form>
 
+      <!-- OIDC/SSO 登录按钮 -->
+      <div v-if="showOidcLogin" :class="{ 'mt-4 sm:mt-6': showLdapLogin }">
+        <!-- 分隔线（当同时显示 LDAP 和 OIDC 时） -->
+        <div v-if="showLdapLogin && showOidcLogin" class="relative mb-4 sm:mb-6">
+          <div class="absolute inset-0 flex items-center">
+            <div class="w-full border-t border-gray-300 dark:border-gray-600" />
+          </div>
+          <div class="relative flex justify-center text-sm">
+            <span class="bg-white/80 px-2 text-gray-500 dark:bg-gray-800/80 dark:text-gray-400">
+              或
+            </span>
+          </div>
+        </div>
+
+        <button
+          class="btn w-full px-4 py-3 text-base font-semibold sm:px-6 sm:py-4 sm:text-lg"
+          :class="showLdapLogin ? 'btn-secondary' : 'btn-primary'"
+          :disabled="authStore.oidcLoading"
+          type="button"
+          @click="handleOidcLogin"
+        >
+          <i v-if="!authStore.oidcLoading" class="fas fa-key mr-2" />
+          <div v-if="authStore.oidcLoading" class="loading-spinner mr-2" />
+          {{ authStore.oidcLoading ? '正在跳转...' : 'SSO 单点登录' }}
+        </button>
+      </div>
+
+      <!-- 没有可用的登录方式时显示提示 -->
+      <div
+        v-if="!oemLoading && !showLdapLogin && !showOidcLogin"
+        class="text-center text-sm text-gray-500 dark:text-gray-400"
+      >
+        <i class="fas fa-info-circle mr-2" />
+        暂无可用的登录方式，请联系管理员
+      </div>
+
       <div
         v-if="authStore.loginError"
         class="mt-4 rounded-lg border border-red-500/30 bg-red-500/20 p-3 text-center text-xs text-red-800 backdrop-blur-sm dark:text-red-400 sm:mt-6 sm:rounded-xl sm:p-4 sm:text-sm"
@@ -97,13 +134,28 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
 
+const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const oemLoading = computed(() => authStore.oemLoading)
+
+// 计算是否显示各种登录方式
+const showLdapLogin = computed(() => {
+  return (
+    authStore.oemSettings.userManagementEnabled && authStore.oemSettings.ldapEnabled && !oemLoading.value
+  )
+})
+
+const showOidcLogin = computed(() => {
+  return (
+    authStore.oemSettings.userManagementEnabled && authStore.oemSettings.oidcEnabled && !oemLoading.value
+  )
+})
 
 const loginForm = ref({
   username: '',
@@ -115,10 +167,20 @@ onMounted(() => {
   themeStore.initTheme()
   // 加载OEM设置
   authStore.loadOemSettings()
+
+  // 检查 URL 中是否有错误参数（OIDC 回调错误）
+  const error = route.query.error
+  if (error) {
+    authStore.loginError = decodeURIComponent(error)
+  }
 })
 
 const handleLogin = async () => {
   await authStore.login(loginForm.value)
+}
+
+const handleOidcLogin = async () => {
+  await authStore.oidcLogin()
 }
 </script>
 
