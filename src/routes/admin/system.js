@@ -279,12 +279,36 @@ router.get('/oem-settings', async (req, res) => {
       }
     }
 
-    // 添加 LDAP 启用状态到响应中
+    // 添加认证配置到响应中
+    const authConfig = {
+      userManagementEnabled: config.userManagement && config.userManagement.enabled === true,
+      ldapEnabled: config.ldap && config.ldap.enabled === true,
+      oidcEnabled: config.oidc && config.oidc.enabled === true,
+      authMethods: []
+    }
+
+    // 构建可用的认证方式列表
+    if (config.ldap && config.ldap.enabled) {
+      authConfig.authMethods.push({
+        type: 'ldap',
+        name: 'LDAP',
+        description: '使用 LDAP 账号登录'
+      })
+    }
+
+    if (config.oidc && config.oidc.enabled) {
+      authConfig.authMethods.push({
+        type: 'oidc',
+        name: 'SSO',
+        description: '使用单点登录'
+      })
+    }
+
     return res.json({
       success: true,
       data: {
         ...settings,
-        ldapEnabled: config.ldap && config.ldap.enabled === true
+        ...authConfig
       }
     })
   } catch (error) {

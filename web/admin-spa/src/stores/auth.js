@@ -14,7 +14,12 @@ export const useAuthStore = defineStore('auth', () => {
     siteName: 'Claude Relay Service',
     siteIcon: '',
     siteIconData: '',
-    faviconData: ''
+    faviconData: '',
+    // 认证配置（用于显示用户登录入口）
+    userManagementEnabled: false,
+    ldapEnabled: false,
+    oidcEnabled: false,
+    authMethods: []
   })
   const oemLoading = ref(true)
 

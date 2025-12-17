@@ -5,6 +5,7 @@ import { APP_CONFIG } from '@/config/app'
 
 // 路由懒加载
 const LoginView = () => import('@/views/LoginView.vue')
+const OidcCallbackView = () => import('@/views/OidcCallbackView.vue')
 const UserLoginView = () => import('@/views/UserLoginView.vue')
 const UserDashboardView = () => import('@/views/UserDashboardView.vue')
 const UserManagementView = () => import('@/views/UserManagementView.vue')
@@ -44,6 +45,12 @@ const routes = [
   {
     path: '/admin-login',
     redirect: '/login'
+  },
+  {
+    path: '/oidc-callback',
+    name: 'OidcCallback',
+    component: OidcCallbackView,
+    meta: { requiresAuth: false }
   },
   {
     path: '/user-login',

@@ -85,6 +85,19 @@
         </button>
       </form>
 
+      <!-- 用户登录入口（当启用用户管理时显示） -->
+      <div
+        v-if="!oemLoading && authStore.oemSettings.userManagementEnabled"
+        class="mt-4 text-center sm:mt-6"
+      >
+        <router-link
+          class="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+          to="/user-login"
+        >
+          用户登录入口
+        </router-link>
+      </div>
+
       <div
         v-if="authStore.loginError"
         class="mt-4 rounded-lg border border-red-500/30 bg-red-500/20 p-3 text-center text-xs text-red-800 backdrop-blur-sm dark:text-red-400 sm:mt-6 sm:rounded-xl sm:p-4 sm:text-sm"

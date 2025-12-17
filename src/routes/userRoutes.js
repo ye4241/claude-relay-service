@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const ldapService = require('../services/ldapService')
+const oidcService = require('../services/oidcService')
 const userService = require('../services/userService')
 const apiKeyService = require('../services/apiKeyService')
 const logger = require('../utils/logger')
@@ -48,7 +49,7 @@ function initRateLimiters() {
   return { ipRateLimiter, strictIpRateLimiter }
 }
 
-// 🔐 用户登录端点
+// 🔐 用户登录端点（LDAP认证）
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body
@@ -156,6 +157,145 @@ router.post('/login', async (req, res) => {
     res.status(500).json({
       error: 'Login error',
       message: 'Internal server error during login'
+    })
+  }
+})
+
+// ==================== OIDC 认证端点 ====================
+
+// 🔗 获取 OIDC 授权 URL
+router.get('/oidc/auth-url', async (req, res) => {
+  try {
+    // 检查用户管理是否启用
+    if (!config.userManagement.enabled) {
+      return res.status(503).json({
+        error: 'Service unavailable',
+        message: 'User management is not enabled'
+      })
+    }
+
+    // 检查 OIDC 是否启用
+    if (!config.oidc || !config.oidc.enabled) {
+      return res.status(503).json({
+        error: 'Service unavailable',
+        message: 'OIDC authentication is not enabled'
+      })
+    }
+
+    const { authUrl, state } = await oidcService.generateAuthUrl()
+
+    res.json({
+      success: true,
+      authUrl,
+      state
+    })
+  } catch (error) {
+    logger.error('❌ OIDC auth URL generation error:', error)
+    res.status(500).json({
+      error: 'OIDC error',
+      message: 'Failed to generate OIDC authorization URL'
+    })
+  }
+})
+
+// 🔄 OIDC 回调端点
+router.get('/oidc/callback', async (req, res) => {
+  try {
+    const { code, state, error: oidcError, error_description } = req.query
+    const clientIp = req.ip || req.connection.remoteAddress || 'unknown'
+
+    // 检查 OIDC 返回的错误
+    if (oidcError) {
+      logger.warn(`⚠️ OIDC callback error: ${oidcError} - ${error_description}`)
+      // 重定向到前端用户登录页面并带上错误信息
+      const errorMessage = encodeURIComponent(error_description || oidcError)
+      return res.redirect(`/admin-next/#/user-login?error=${errorMessage}`)
+    }
+
+    if (!code || !state) {
+      return res.redirect(
+        `/admin-next/#/user-login?error=${encodeURIComponent('Missing code or state')}`
+      )
+    }
+
+    // 检查用户管理是否启用
+    if (!config.userManagement.enabled) {
+      return res.redirect(
+        `/admin-next/#/user-login?error=${encodeURIComponent('User management is not enabled')}`
+      )
+    }
+
+    // 检查 OIDC 是否启用
+    if (!config.oidc || !config.oidc.enabled) {
+      return res.redirect(
+        `/admin-next/#/user-login?error=${encodeURIComponent('OIDC authentication is not enabled')}`
+      )
+    }
+
+    // 完成 OIDC 认证
+    const authResult = await oidcService.authenticateWithCode(code, state)
+
+    if (!authResult.success) {
+      logger.info(`🚫 Failed OIDC login from IP: ${clientIp}`)
+      return res.redirect(
+        `/admin-next/#/user-login?error=${encodeURIComponent(authResult.message || 'OIDC login failed')}`
+      )
+    }
+
+    // 登录成功
+    logger.info(`✅ OIDC user login successful: ${authResult.user.username} from IP: ${clientIp}`)
+
+    // 重定向到前端 OIDC 回调页面，带上 session token
+    res.redirect(`/admin-next/#/oidc-callback?token=${authResult.sessionToken}`)
+  } catch (error) {
+    logger.error('❌ OIDC callback error:', error)
+    res.redirect(
+      `/admin-next/#/user-login?error=${encodeURIComponent('OIDC authentication failed')}`
+    )
+  }
+})
+
+// 🔐 OIDC Token 验证端点（用于前端 OIDC 回调后验证 token）
+router.post('/oidc/verify-token', async (req, res) => {
+  try {
+    const { sessionToken } = req.body
+
+    if (!sessionToken) {
+      return res.status(400).json({
+        error: 'Missing token',
+        message: 'Session token is required'
+      })
+    }
+
+    // 验证 session token
+    const sessionData = await userService.validateUserSession(sessionToken)
+
+    if (!sessionData) {
+      return res.status(401).json({
+        error: 'Invalid token',
+        message: 'Session token is invalid or expired'
+      })
+    }
+
+    res.json({
+      success: true,
+      message: 'Token verified',
+      user: {
+        id: sessionData.user.id,
+        username: sessionData.user.username,
+        email: sessionData.user.email,
+        displayName: sessionData.user.displayName,
+        firstName: sessionData.user.firstName,
+        lastName: sessionData.user.lastName,
+        role: sessionData.user.role
+      },
+      sessionToken
+    })
+  } catch (error) {
+    logger.error('❌ OIDC token verification error:', error)
+    res.status(500).json({
+      error: 'Verification error',
+      message: 'Failed to verify session token'
     })
   }
 })
@@ -757,6 +897,65 @@ router.get('/admin/ldap-test', authenticateUserOrAdmin, requireAdmin, async (req
     res.status(500).json({
       error: 'LDAP test error',
       message: 'Failed to test LDAP connection'
+    })
+  }
+})
+
+// 🔧 测试OIDC连接（管理员）
+router.get('/admin/oidc-test', authenticateUserOrAdmin, requireAdmin, async (req, res) => {
+  try {
+    const testResult = await oidcService.testConnection()
+
+    res.json({
+      success: true,
+      oidcTest: testResult,
+      config: oidcService.getConfigInfo()
+    })
+  } catch (error) {
+    logger.error('❌ OIDC test error:', error)
+    res.status(500).json({
+      error: 'OIDC test error',
+      message: 'Failed to test OIDC connection'
+    })
+  }
+})
+
+// 📊 获取认证配置信息（公开端点，用于登录页面）
+router.get('/auth-config', async (req, res) => {
+  try {
+    const authConfig = {
+      userManagementEnabled: config.userManagement.enabled,
+      ldapEnabled: config.ldap && config.ldap.enabled === true,
+      oidcEnabled: config.oidc && config.oidc.enabled === true,
+      // 可用的认证方式
+      authMethods: []
+    }
+
+    if (config.ldap && config.ldap.enabled) {
+      authConfig.authMethods.push({
+        type: 'ldap',
+        name: 'LDAP',
+        description: '使用 LDAP 账号登录'
+      })
+    }
+
+    if (config.oidc && config.oidc.enabled) {
+      authConfig.authMethods.push({
+        type: 'oidc',
+        name: 'SSO',
+        description: '使用单点登录'
+      })
+    }
+
+    res.json({
+      success: true,
+      config: authConfig
+    })
+  } catch (error) {
+    logger.error('❌ Get auth config error:', error)
+    res.status(500).json({
+      error: 'Config error',
+      message: 'Failed to get authentication configuration'
     })
   }
 })

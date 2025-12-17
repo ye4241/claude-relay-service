@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-Claude Relay Service 是一个多平台 AI API 中转服务，支持 **Claude (官方/Console)、Gemini、OpenAI Responses (Codex)、AWS Bedrock、Azure OpenAI、Droid (Factory.ai)、CCR** 等多种账户类型。提供完整的多账户管理、API Key 认证、代理配置、用户管理、LDAP认证、Webhook通知和现代化 Web 管理界面。该服务作为客户端（如 Claude Code、Gemini CLI、Codex、Droid CLI、Cherry Studio 等）与 AI API 之间的中间件，提供认证、限流、监控、定价计算、成本统计等功能。
+Claude Relay Service 是一个多平台 AI API 中转服务，支持 **Claude (官方/Console)、Gemini、OpenAI Responses (Codex)、AWS Bedrock、Azure OpenAI、Droid (Factory.ai)、CCR** 等多种账户类型。提供完整的多账户管理、API Key 认证、代理配置、用户管理、LDAP认证、OIDC认证、Webhook通知和现代化 Web 管理界面。该服务作为客户端（如 Claude Code、Gemini CLI、Codex、Droid CLI、Cherry Studio 等）与 AI API 之间的中间件，提供认证、限流、监控、定价计算、成本统计等功能。
 
 ## 核心架构
 
@@ -67,6 +67,7 @@ Claude Relay Service 是一个多平台 AI API 中转服务，支持 **Claude (�
 - **webhookService.js**: Webhook通知服务
 - **webhookConfigService.js**: Webhook配置管理
 - **ldapService.js**: LDAP认证服务
+- **oidcService.js**: OIDC认证服务，支持标准OIDC协议和PKCE流程
 - **tokenRefreshService.js**: Token自动刷新服务
 - **rateLimitCleanupService.js**: 速率限制状态清理服务
 - **claudeCodeHeadersService.js**: Claude Code客户端请求头处理
@@ -112,6 +113,8 @@ Claude Relay Service 是一个多平台 AI API 中转服务，支持 **Claude (�
 
 - ✅ **用户管理**: 完整的用户注册、登录、API Key管理系统
 - ✅ **LDAP认证**: 企业级LDAP/Active Directory集成
+- ✅ **OIDC认证**: 标准OpenID Connect协议支持，可与各种SSO系统集成（如Keycloak、Okta、Azure AD等）
+- ✅ **多认证方式**: 支持同时启用LDAP和OIDC，登录页面自动显示可用的登录选项
 - ✅ **权限控制**: API Key级别的服务权限（all/claude/gemini/openai）
 - ✅ **客户端限制**: 基于User-Agent的客户端识别和限制
 - ✅ **模型黑名单**: API Key级别的模型访问控制
@@ -182,6 +185,12 @@ npm run service:stop          # 停止服务
 - `LDAP_ENABLED`: 启用LDAP认证（默认false）
 - `LDAP_URL`: LDAP服务器地址（如 ldaps://ldap.example.com:636）
 - `LDAP_TLS_REJECT_UNAUTHORIZED`: LDAP证书验证（默认true）
+- `OIDC_ENABLED`: 启用OIDC认证（默认false）
+- `OIDC_ISSUER_URL`: OIDC提供商的Issuer URL
+- `OIDC_CLIENT_ID`: OIDC客户端ID
+- `OIDC_CLIENT_SECRET`: OIDC客户端密钥
+- `OIDC_REDIRECT_URI`: OIDC回调URL（如 http://localhost:3000/users/oidc/callback）
+- `OIDC_SCOPE`: OIDC授权范围（默认 openid profile email）
 - `WEBHOOK_ENABLED`: 启用Webhook通知（默认true）
 - `WEBHOOK_URLS`: Webhook通知URL列表（逗号分隔）
 - `CLAUDE_OVERLOAD_HANDLING_MINUTES`: Claude 529错误处理持续时间（分钟，0表示禁用）
@@ -331,21 +340,26 @@ npm run setup  # 自动生成密钥并创建管理员账户
    - 检查LDAP_URL、LDAP_BIND_DN、LDAP_BIND_PASSWORD配置
    - 自签名证书问题：设置 LDAP_TLS_REJECT_UNAUTHORIZED=false
    - 查看日志中的LDAP连接错误详情
-7. **用户管理功能不可用**: 确认USER_MANAGEMENT_ENABLED=true，检查userService初始化
-8. **Webhook通知失败**:
+7. **OIDC认证失败**:
+   - 检查OIDC_ISSUER_URL、OIDC_CLIENT_ID、OIDC_CLIENT_SECRET配置
+   - 确认OIDC_REDIRECT_URI与OIDC提供商配置的回调URL一致
+   - 检查OIDC提供商的发现文档是否可访问（/.well-known/openid-configuration）
+   - 查看日志中的OIDC连接错误详情
+8. **用户管理功能不可用**: 确认USER_MANAGEMENT_ENABLED=true，检查userService初始化
+9. **Webhook通知失败**:
    - 确认WEBHOOK_ENABLED=true
    - 检查WEBHOOK_URLS格式（逗号分隔）
    - 查看logs/webhook-*.log日志
-9. **统一调度器选择账户失败**:
+10. **统一调度器选择账户失败**:
    - 检查账户状态（status: 'active'）
    - 确认账户类型与请求路由匹配
    - 查看粘性会话绑定情况
-10. **并发计数泄漏**: 系统每分钟自动清理过期并发计数（concurrency cleanup task），重启时也会自动清理
-11. **速率限制未清理**: rateLimitCleanupService每5分钟自动清理过期限流状态
-12. **成本统计不准确**: 运行 `npm run init:costs` 初始化成本数据，检查pricingService是否正确加载模型价格
-13. **缓存命中率低**: 查看缓存监控统计，调整LRU缓存大小配置
-14. **用户消息队列超时**: 优化后锁持有时间已从分钟级降到毫秒级（请求发送后立即释放），默认 `USER_MESSAGE_QUEUE_TIMEOUT_MS=5000` 已足够。如仍有超时，检查网络延迟或禁用此功能（`USER_MESSAGE_QUEUE_ENABLED=false`）
-15. **并发请求排队问题**:
+11. **并发计数泄漏**: 系统每分钟自动清理过期并发计数（concurrency cleanup task），重启时也会自动清理
+12. **速率限制未清理**: rateLimitCleanupService每5分钟自动清理过期限流状态
+13. **成本统计不准确**: 运行 `npm run init:costs` 初始化成本数据，检查pricingService是否正确加载模型价格
+14. **缓存命中率低**: 查看缓存监控统计，调整LRU缓存大小配置
+15. **用户消息队列超时**: 优化后锁持有时间已从分钟级降到毫秒级（请求发送后立即释放），默认 `USER_MESSAGE_QUEUE_TIMEOUT_MS=5000` 已足够。如仍有超时，检查网络延迟或禁用此功能（`USER_MESSAGE_QUEUE_ENABLED=false`）
+16. **并发请求排队问题**:
    - 排队超时：检查 `concurrentRequestQueueTimeoutMs` 配置是否合理（默认10秒）
    - 排队数过多：调整 `concurrentRequestQueueMaxSize` 和 `concurrentRequestQueueMaxSizeMultiplier`
    - 查看排队统计：访问 `/admin/concurrency-queue/stats` 接口查看 entered/success/timeout/cancelled/socket_changed/rejected_overload 统计
